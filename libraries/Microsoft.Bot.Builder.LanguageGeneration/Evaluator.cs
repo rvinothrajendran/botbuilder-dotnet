@@ -2,16 +2,18 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Mime;
 using System.Text;
 using System.Text.RegularExpressions;
 using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
 using Microsoft.Bot.Builder.Expressions;
 using Microsoft.Bot.Builder.Expressions.Parser;
+using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Bot.Builder.LanguageGeneration
 {
-    public class Evaluator : LGFileParserBaseVisitor<string>
+    public class Evaluator : LGFileParserBaseVisitor<object>
     {
         private readonly Stack<EvaluationTarget> evaluationTargetStack = new Stack<EvaluationTarget>();
 
@@ -30,7 +32,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
 
         public Dictionary<string, LGTemplate> TemplateMap { get; }
 
-        public string EvaluateTemplate(string templateName, object scope)
+        public object EvaluateTemplate(string templateName, object scope)
         {
             if (!TemplateMap.ContainsKey(templateName))
             {
@@ -50,7 +52,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             return result;
         }
 
-        public override string VisitTemplateDefinition([NotNull] LGFileParser.TemplateDefinitionContext context)
+        public override object VisitTemplateDefinition([NotNull] LGFileParser.TemplateDefinitionContext context)
         {
             var templateNameContext = context.templateNameLine();
             if (templateNameContext.templateName().GetText().Equals(CurrentTarget().TemplateName))
@@ -61,16 +63,40 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             return null;
         }
 
-        public override string VisitNormalBody([NotNull] LGFileParser.NormalBodyContext context) => Visit(context.normalTemplateBody());
+        public override object VisitStructuredTemplateBody([NotNull] LGFileParser.StructuredTemplateBodyContext context)
+        {
+            var result = new JObject();
+            var typeName = context.structuredBodyNameLine().STRUCTURED_CONTENT().GetText();
+            result["$type"] = typeName;
 
-        public override string VisitNormalTemplateBody([NotNull] LGFileParser.NormalTemplateBodyContext context)
+            var bodys = context.structuredBodyContentLine().STRUCTURED_CONTENT();
+            foreach (var body in bodys)
+            {
+                var line = body.GetText().Trim();
+                var start = line.IndexOf('=');
+                if (start > 0)
+                {
+                    // make it insensitive
+                    var property = line.Substring(0, start).Trim().ToLower();
+                    var originValue = line.Substring(start + 1).Trim();
+                    var value = EvalTextWithExpression(originValue);
+                    result[property] = value;
+                }
+            }
+
+            return result;
+        }
+
+        public override object VisitNormalBody([NotNull] LGFileParser.NormalBodyContext context) => Visit(context.normalTemplateBody());
+
+        public override object VisitNormalTemplateBody([NotNull] LGFileParser.NormalTemplateBodyContext context)
         {
             var normalTemplateStrs = context.normalTemplateString();
             var rd = new Random();
             return Visit(normalTemplateStrs[rd.Next(normalTemplateStrs.Length)]);
         }
 
-        public override string VisitIfElseBody([NotNull] LGFileParser.IfElseBodyContext context)
+        public override object VisitIfElseBody([NotNull] LGFileParser.IfElseBodyContext context)
         {
             var ifRules = context.ifElseTemplateBody().ifConditionRule();
             foreach (var ifRule in ifRules)
@@ -84,7 +110,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             return null;
         }
 
-        public override string VisitSwitchCaseBody([NotNull] LGFileParser.SwitchCaseBodyContext context)
+        public override object VisitSwitchCaseBody([NotNull] LGFileParser.SwitchCaseBodyContext context)
         {
             var switchCaseNodes = context.switchCaseTemplateBody().switchCaseRule();
             var length = switchCaseNodes.Length;
@@ -125,7 +151,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             return null;
         }
 
-        public override string VisitNormalTemplateString([NotNull] LGFileParser.NormalTemplateStringContext context)
+        public override object VisitNormalTemplateString([NotNull] LGFileParser.NormalTemplateStringContext context)
         {
             var builder = new StringBuilder();
             foreach (ITerminalNode node in context.children)
@@ -251,7 +277,12 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
         {
             // remove ``` ```
             exp = exp.Substring(3, exp.Length - 6);
-            var reg = @"@\{[^{}]+\}";
+            return EvalTextWithExpression(exp);
+        }
+
+        private string EvalTextWithExpression(string exp)
+        {
+            var reg = @"@?\{[^{}]+\}";
             var evalutor = new MatchEvaluator(m => EvalExpression(m.Value));
 
             return Regex.Replace(exp, reg, evalutor);

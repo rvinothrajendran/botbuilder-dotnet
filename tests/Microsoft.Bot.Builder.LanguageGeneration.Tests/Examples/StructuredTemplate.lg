@@ -1,0 +1,16 @@
+﻿# AskForAge.prompt
+[Activity
+    Text = @{GetAge()}
+    Speak = @{GetAge()}
+]
+
+# GetAge
+- how old are you?
+- what is your age?
+
+# AskForAge.prompt2
+[Activity
+    Text = {GetAge()}
+    SuggestedActions = 10 | 20 | 30
+]
+
