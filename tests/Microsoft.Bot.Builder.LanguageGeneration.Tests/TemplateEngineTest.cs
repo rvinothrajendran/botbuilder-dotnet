@@ -724,6 +724,11 @@ namespace Microsoft.Bot.Builder.AI.LanguageGeneration.Tests
 
             Assert.IsTrue(
                 JToken.DeepEquals(JObject.Parse("{\"$type\":\"MyStruct\",\"text\":\"foo\",\"speak\":\"bar\"}"), evaled as JObject));
+
+            evaled = engine.EvaluateTemplate("AskForColor");
+
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"suggestedactions\":[{\"$type\":\"MyStruct\",\"speak\":\"bar\",\"text\":\"zoo\"},{\"$type\":\"Activity\",\"speak\":\"I can also speak!\"}]}"), evaled as JObject));
         }
     }
 }

@@ -48,3 +48,8 @@
     Speak = bar
     Text = zoo
 ]
+
+# AskForColor
+[Activity
+    SuggestedActions = {ST2()} | {T3()}
+]

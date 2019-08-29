@@ -84,21 +84,14 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                     var valueArray = regex.Split(originValue);
                     if (valueArray.Length == 1)
                     {
-                        if ((originValue.StartsWith("@{") || originValue.StartsWith("{")) && originValue.EndsWith("}"))
-                        {
-                            result[property] = JToken.FromObject(EvalExpression(originValue));
-                        }
-                        else
-                        {
-                            result[property] = EvalTextWithExpression(originValue);
-                        }
+                        result[property] = EvalText(originValue);
                     }
                     else
                     {
                         var valueList = new JArray();
                         foreach (var item in valueArray)
                         {
-                            valueList.Add(Regex.Unescape(EvalTextWithExpression(item.Trim())));
+                            valueList.Add(EvalText(item.Trim()));
                         }
 
                         result[property] = valueList;
@@ -111,7 +104,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                     // {ST2()}
                     // ]
 
-                    // TODO: just merge the first layer. 
+                    // TODO: just merge the first layer.
                     // When the same property exists in both the calling template as well as callee, the content in caller will trump any content in the callee.
                     var propertyObject = JObject.FromObject(EvalExpression(line));
                     foreach (var item in propertyObject)
@@ -121,11 +114,28 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                             result[item.Key] = item.Value;
                         }
                     }
-
                 }
             }
 
             return result;
+        }
+
+        private JToken EvalText(string exp)
+        {
+            if (string.IsNullOrEmpty(exp))
+            {
+                return exp;
+            }
+
+            if ((exp.StartsWith("@{") || exp.StartsWith("{")) && exp.EndsWith("}"))
+            {
+                // @{} or {} text, get object result
+                return JToken.FromObject(EvalExpression(exp));
+            }
+            else
+            {
+                return Regex.Unescape(EvalTextContainsExpression(exp));
+            }
         }
 
         public override object VisitNormalBody([NotNull] LGFileParser.NormalBodyContext context) => Visit(context.normalTemplateBody());
@@ -318,10 +328,10 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
         {
             // remove ``` ```
             exp = exp.Substring(3, exp.Length - 6);
-            return EvalTextWithExpression(exp);
+            return EvalTextContainsExpression(exp);
         }
 
-        private string EvalTextWithExpression(string exp)
+        private string EvalTextContainsExpression(string exp)
         {
             var reg = @"@?\{[^{}]+\}";
             var evalutor = new MatchEvaluator(m => EvalExpression(m.Value).ToString());
