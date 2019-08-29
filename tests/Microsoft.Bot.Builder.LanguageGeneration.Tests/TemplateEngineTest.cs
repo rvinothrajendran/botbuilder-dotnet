@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.Bot.Builder.LanguageGeneration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Bot.Builder.AI.LanguageGeneration.Tests
 {
@@ -686,18 +687,43 @@ namespace Microsoft.Bot.Builder.AI.LanguageGeneration.Tests
             Assert.AreEqual(evaled, "goodmorning");
         }
 
+        private string GetExampleFilePath(string fileName)
+        {
+            return Path.Combine(AppContext.BaseDirectory, "Examples", fileName);
+        }
+        
         [TestMethod]
         public void TestStructuredTemplate()
         {
             var engine = new TemplateEngine().AddFile(GetExampleFilePath("StructuredTemplate.lg"));
 
-            object evaled = engine.EvaluateTemplate("AskForAge.prompt2", null);
+            var evaled = engine.EvaluateTemplate("AskForAge.prompt");
 
-        }
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"how old are you?\",\"speak\":\"how old are you?\"}"), evaled as JObject)
+                || JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"what is your age?\",\"speak\":\"what is your age?\"}"), evaled as JObject));
 
-        private string GetExampleFilePath(string fileName)
-        {
-            return Path.Combine(AppContext.BaseDirectory, "Examples", fileName);
+            evaled = engine.EvaluateTemplate("AskForAge.prompt2");
+
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"how old are you?\",\"suggestedactions\":[\"10\",\"20\",\"30\"]}"), evaled as JObject)
+                || JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"what is your age?\",\"suggestedactions\":[\"10\",\"20\",\"30\"]}"), evaled as JObject));
+
+            evaled = engine.EvaluateTemplate("AskForAge.prompt3");
+
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"how old are you?\",\"suggestions\":[\"10 | cards\",\"20 | cards\"]}"), evaled as JObject)
+                || JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"what is your age?\",\"suggestions\":[\"10 | cards\",\"20 | cards\"]}"), evaled as JObject));
+
+            evaled = engine.EvaluateTemplate("T1");
+
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"text\":\"This is awesome\",\"speak\":\"foo bar I can also speak!\"}"), evaled as JObject));
+
+            evaled = engine.EvaluateTemplate("ST1");
+
+            Assert.IsTrue(
+                JToken.DeepEquals(JObject.Parse("{\"$type\":\"MyStruct\",\"text\":\"foo\",\"speak\":\"bar\"}"), evaled as JObject));
         }
     }
 }

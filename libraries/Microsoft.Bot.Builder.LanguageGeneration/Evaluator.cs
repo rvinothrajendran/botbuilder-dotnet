@@ -79,8 +79,49 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                     // make it insensitive
                     var property = line.Substring(0, start).Trim().ToLower();
                     var originValue = line.Substring(start + 1).Trim();
-                    var value = EvalTextWithExpression(originValue);
-                    result[property] = value;
+
+                    var regex = new Regex(@"(?<!\\)\|");
+                    var valueArray = regex.Split(originValue);
+                    if (valueArray.Length == 1)
+                    {
+                        if ((originValue.StartsWith("@{") || originValue.StartsWith("{")) && originValue.EndsWith("}"))
+                        {
+                            result[property] = JToken.FromObject(EvalExpression(originValue));
+                        }
+                        else
+                        {
+                            result[property] = EvalTextWithExpression(originValue);
+                        }
+                    }
+                    else
+                    {
+                        var valueList = new JArray();
+                        foreach (var item in valueArray)
+                        {
+                            valueList.Add(Regex.Unescape(EvalTextWithExpression(item.Trim())));
+                        }
+
+                        result[property] = valueList;
+                    }
+                }
+                else if ((line.StartsWith("@{") || line.StartsWith("{")) && line.EndsWith("}"))
+                {
+                    // [MyStruct
+                    // Text = foo
+                    // {ST2()}
+                    // ]
+
+                    // TODO: just merge the first layer. 
+                    // When the same property exists in both the calling template as well as callee, the content in caller will trump any content in the callee.
+                    var propertyObject = JObject.FromObject(EvalExpression(line));
+                    foreach (var item in propertyObject)
+                    {
+                        if (result.Property(item.Key) == null)
+                        {
+                            result[item.Key] = item.Value;
+                        }
+                    }
+
                 }
             }
 
@@ -115,7 +156,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             var switchCaseNodes = context.switchCaseTemplateBody().switchCaseRule();
             var length = switchCaseNodes.Length;
             var switchExprs = switchCaseNodes[0].switchCaseStat().EXPRESSION();
-            var switchExprResult = EvalExpression(switchExprs[0].GetText());
+            var switchExprResult = EvalExpression(switchExprs[0].GetText()).ToString();
             var idx = 0;
             foreach (var switchCaseNode in switchCaseNodes)
             {
@@ -139,7 +180,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                 }
 
                 var caseExprs = switchCaseNode.switchCaseStat().EXPRESSION();
-                var caseExprResult = EvalExpression(caseExprs[0].GetText());
+                var caseExprResult = EvalExpression(caseExprs[0].GetText()).ToString();
                 if (switchExprResult == caseExprResult)
                 {
                     return Visit(switchCaseNode.normalTemplateBody());
@@ -164,7 +205,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                         builder.Append(Regex.Unescape(node.GetText()));
                         break;
                     case LGFileParser.EXPRESSION:
-                        builder.Append(EvalExpression(node.GetText()));
+                        builder.Append(EvalExpression(node.GetText()).ToString());
                         break;
                     case LGFileParser.TEMPLATE_REF:
                         builder.Append(EvalTemplateRef(node.GetText()));
@@ -233,7 +274,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             }
         }
 
-        private string EvalExpression(string exp)
+        private object EvalExpression(string exp)
         {
             exp = exp.TrimStart('@').TrimStart('{').TrimEnd('}');
             var (result, error) = EvalByExpressionEngine(exp, CurrentTarget().Scope);
@@ -247,7 +288,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                 throw new Exception($"Error occurs when evaluating expression '{exp}': {exp} is evaluated to null");
             }
 
-            return result.ToString();
+            return result;
         }
 
         private string EvalTemplateRef(string exp)
@@ -265,7 +306,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                 }
             }
 
-            return EvalExpression(exp);
+            return EvalExpression(exp).ToString();
         }
 
         private EvaluationTarget CurrentTarget() =>
@@ -283,15 +324,25 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
         private string EvalTextWithExpression(string exp)
         {
             var reg = @"@?\{[^{}]+\}";
-            var evalutor = new MatchEvaluator(m => EvalExpression(m.Value));
+            var evalutor = new MatchEvaluator(m => EvalExpression(m.Value).ToString());
 
             return Regex.Replace(exp, reg, evalutor);
         }
 
         private (object value, string error) EvalByExpressionEngine(string exp, object scope)
         {
-            var parse = this.ExpressionEngine.Parse(exp);
-            return parse.TryEvaluate(scope);
+            var currentExpressionHistory = CurrentTarget().ExpressionHistory;
+            if (currentExpressionHistory.ContainsKey(exp))
+            {
+                return currentExpressionHistory[exp];
+            }
+            else
+            {
+                var parse = this.ExpressionEngine.Parse(exp);
+                var result = parse.TryEvaluate(scope);
+                CurrentTarget().AddExpression(exp, result);
+                return result;
+            }
         }
 
         // Genearte a new lookup function based on one lookup function
@@ -307,7 +358,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
 
             if (this.TemplateMap.ContainsKey(name))
             {
-                return new ExpressionEvaluator(name, BuiltInFunctions.Apply(this.TemplateEvaluator(name)), ReturnType.String, this.ValidTemplateReference);
+                return new ExpressionEvaluator(name, BuiltInFunctions.Apply(this.TemplateEvaluator(name)), ReturnType.Object, this.ValidTemplateReference);
             }
 
             return baseLookup(name);
@@ -350,5 +401,15 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
         public string TemplateName { get; set; }
 
         public object Scope { get; set; }
+
+        /// <summary>
+        /// Gets expression that evaluated by current template target.
+        /// </summary>
+        /// <value>
+        /// Expression that evaluated by current template target.
+        /// </value>
+        public Dictionary<string, (object, string)> ExpressionHistory { get; } = new Dictionary<string, (object, string)>();
+
+        public void AddExpression(string expression, (object, string) result) => ExpressionHistory[expression] = result;
     }
 }
