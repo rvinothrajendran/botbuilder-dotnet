@@ -53,3 +53,11 @@
 [Activity
     SuggestedActions = {ST2()} | {T3()}
 ]
+
+# MultiExpression
+- @{T3()} @{T4()}
+
+# T4
+[MyStruct
+    Text = hi
+]

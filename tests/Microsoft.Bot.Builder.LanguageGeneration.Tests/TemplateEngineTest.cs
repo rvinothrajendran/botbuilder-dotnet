@@ -729,6 +729,9 @@ namespace Microsoft.Bot.Builder.AI.LanguageGeneration.Tests
 
             Assert.IsTrue(
                 JToken.DeepEquals(JObject.Parse("{\"$type\":\"Activity\",\"suggestedactions\":[{\"$type\":\"MyStruct\",\"speak\":\"bar\",\"text\":\"zoo\"},{\"$type\":\"Activity\",\"speak\":\"I can also speak!\"}]}"), evaled as JObject));
+
+            evaled = engine.EvaluateTemplate("MultiExpression");
+            Assert.AreEqual(evaled.ToString(), "{\r\n  \"$type\": \"Activity\",\r\n  \"speak\": \"I can also speak!\"\r\n} {\r\n  \"$type\": \"MyStruct\",\r\n  \"text\": \"hi\"\r\n}");
         }
     }
 }

@@ -15,6 +15,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
 {
     public class Evaluator : LGFileParserBaseVisitor<object>
     {
+        private const string ExpressionRecognizePattern = @"@?(?<!\\)\{.+?(?<!\\)\}";
         private readonly Stack<EvaluationTarget> evaluationTargetStack = new Stack<EvaluationTarget>();
 
         public Evaluator(List<LGTemplate> templates, ExpressionEngine expressionEngine)
@@ -97,7 +98,7 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
                         result[property] = valueList;
                     }
                 }
-                else if ((line.StartsWith("@{") || line.StartsWith("{")) && line.EndsWith("}"))
+                else if (IsPureExpression(line))
                 {
                     // [MyStruct
                     // Text = foo
@@ -118,24 +119,6 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
             }
 
             return result;
-        }
-
-        private JToken EvalText(string exp)
-        {
-            if (string.IsNullOrEmpty(exp))
-            {
-                return exp;
-            }
-
-            if ((exp.StartsWith("@{") || exp.StartsWith("{")) && exp.EndsWith("}"))
-            {
-                // @{} or {} text, get object result
-                return JToken.FromObject(EvalExpression(exp));
-            }
-            else
-            {
-                return Regex.Unescape(EvalTextContainsExpression(exp));
-            }
         }
 
         public override object VisitNormalBody([NotNull] LGFileParser.NormalBodyContext context) => Visit(context.normalTemplateBody());
@@ -333,10 +316,38 @@ namespace Microsoft.Bot.Builder.LanguageGeneration
 
         private string EvalTextContainsExpression(string exp)
         {
-            var reg = @"@?\{[^{}]+\}";
             var evalutor = new MatchEvaluator(m => EvalExpression(m.Value).ToString());
+            return Regex.Replace(exp, ExpressionRecognizePattern, evalutor);
+        }
 
-            return Regex.Replace(exp, reg, evalutor);
+        private JToken EvalText(string exp)
+        {
+            if (string.IsNullOrEmpty(exp))
+            {
+                return exp;
+            }
+
+            if (IsPureExpression(exp))
+            {
+                // @{} or {} text, get object result
+                return JToken.FromObject(EvalExpression(exp));
+            }
+            else
+            {
+                return Regex.Unescape(EvalTextContainsExpression(exp));
+            }
+        }
+
+        private bool IsPureExpression(string exp)
+        {
+            if (string.IsNullOrWhiteSpace(exp))
+            {
+                return false;
+            }
+
+            exp = exp.Trim();
+            var expressions = Regex.Matches(exp, ExpressionRecognizePattern);
+            return expressions.Count == 1 && expressions[0].Value == exp;
         }
 
         private (object value, string error) EvalByExpressionEngine(string exp, object scope)
